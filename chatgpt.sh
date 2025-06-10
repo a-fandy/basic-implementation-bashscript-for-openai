@@ -11,8 +11,13 @@
 # Usage:
 # ./chatgpt.sh -p "Your message here" [-t "Type"] [-m "Model"] [-s "User Session"] [-f "file uplaod"] [-a "assistant"] 
 
+# Determine the directory of the current script
+script_dir="$(dirname "$(realpath "$0")")"
+
+# The directory to store history files
+history_filename="$script_dir/history-chat"
+
 # Initialize variables
-history_filename="history-chat" # File to store chat history
 type=1                          # Default type
 model="gpt-4o"                  # Default model
 user_session=""
