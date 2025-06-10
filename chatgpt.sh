@@ -118,7 +118,7 @@ case $type in
 esac
 
 # Add GPT Query logic here
-if [ "$choice" != "3" ]; then
+if [ "$type" != "3" ]; then
     # Add user's message to history
     body=$(jq --arg msg "$prompt" '. += [{"role":"user", "content":$msg}]' "$HISTORY_FILE")
     # body=$(echo "$tmp_history" | jq --arg msg "$assistant" '. += [{"role":"system", "content":$msg}]')
@@ -138,7 +138,16 @@ EOF
         -H "Authorization: Bearer $OPENAI_API_KEY" \
         -d "$json_payload")
 else
-    body=$(jq --arg msg "$prompt" --arg img "$image_data" '. += [{"role":"user", "content":[{ "type": "text", "text": "$msg" },{ "type": "image_url", "image_url": { "url": "data:image/jpeg;base64,$img" }]}]' "$HISTORY_FILE")
+    body=$(jq \
+    --arg msg "$prompt" \
+    --arg img "$image_data" \
+    '. += [{
+        "role": "user",
+        "content": [
+        { "type": "text", "text": $msg },
+        { "type": "image_url", "image_url": { "url": ("data:image/jpeg;base64," + $img) } }
+        ]
+    }]' "$HISTORY_FILE")
     # body=$(echo "$tmp_history" | jq --arg msg "$assistant" '. += [{"role":"system", "content":$msg}]')
     json_payload=$(
         cat <<EOF
