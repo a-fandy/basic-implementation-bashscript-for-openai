@@ -37,6 +37,7 @@ history_filename="$script_dir/history-chat"
 # Initialize variables
 type=1                          # Default type
 model="gpt-4o"                  # Default model
+# model="gpt-4.1-mini" 
 user_session=""
 message=""
 file_upload=""
@@ -154,17 +155,11 @@ if [ "$type" != "3" ]; then
     cat <<EOF
         {
         "model": "$model",
-        "messages": $(echo "$body"),
-        "max_tokens": 1000
+        "tools": [{"type": "web_search_preview"}],
+        "input": $(echo "$body")
         }
 EOF
     )
-    # Call OpenAI API via curl
-    response_raw=$(curl https://api.openai.com/v1/chat/completions \
-        -s \
-        -H "Content-Type: application/json" \
-        -H "Authorization: Bearer $OPENAI_API_KEY" \
-        -d "$json_payload")
 else
     body=$(jq \
     --arg msg "$prompt" \
@@ -172,31 +167,34 @@ else
     '. += [{
         "role": "user",
         "content": [
-        { "type": "text", "text": $msg },
-        { "type": "image_url", "image_url": { "url": ("data:image/jpeg;base64," + $img) } }
+        { "type": "input_text", "text": $msg },
+        { "type": "input_image", "image_url": ("data:image/jpeg;base64,"+$img) }
         ]
     }]' "$HISTORY_FILE")
+    # echo $body
+    # exit 0
     # body=$(echo "$tmp_history" | jq --arg msg "$assistant" '. += [{"role":"system", "content":$msg}]')
     json_payload=$(
         cat <<EOF
         {
         "model": "$model",
-        "messages": $(echo "$body"),
-        "max_tokens": 1000
+        "tools": [{"type": "web_search_preview"}],
+        "input": $(echo "$body")
         }
 EOF
     )
-    # Call OpenAI API via curl
-    response_raw=$(curl https://api.openai.com/v1/chat/completions \
-        -s \
-        -H "Content-Type: application/json" \
-        -H "Authorization: Bearer $OPENAI_API_KEY" \
-        -d "$json_payload")
 fi
+
+# Call OpenAI API via curl
+response_raw=$(curl https://api.openai.com/v1/responses \
+    -s \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer $OPENAI_API_KEY" \
+    -d "$json_payload")
 
 # echo "$response_raw"
 
-response=$(echo "$response_raw" | jq -r '.choices[0].message.content')
+response=$(echo "$response_raw" | jq -r '.output [] | select(.type == "message") | .content[0].text')
 echo -e "\n$response\n"
 
 
