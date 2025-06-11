@@ -11,6 +11,23 @@
 # Usage:
 # ./chatgpt.sh -p "Your message here" [-t "Type"] [-m "Model"] [-s "User Session"] [-f "file uplaod"] [-a "assistant"] 
 
+function usage() {
+    echo "Usage: $0 -p \"Your message here\" [-t \"Type\"] [-m \"Model\"] [-s \"User Session\"] [-f \"file upload\"] [-a \"assistant\"] [-h]"
+    echo
+    echo "Options:"
+    echo "  -p \"Your message here\"    Required. The prompt message to send to the API."
+    echo "  -t \"Type\"                 Optional. The type of interaction (default is 1)."
+    echo "  -m \"Model\"                Optional. Specify the model to use (default is gpt-4o)."
+    echo "  -s \"User Session\"         Optional. A session identifier for tracking history."
+    echo "  -f \"file upload\"          Optional. A file to upload, used with types 2 and 3."
+    echo "  -a \"assistant\"            Optional. Set the assistant's initial message."
+    echo "  -h                        Display this help message."
+    echo
+    echo "Example:"
+    echo "  $0 -p \"Hello, how are you?\" -t 1"
+    exit 0
+}
+
 # Determine the directory of the current script
 script_dir="$(dirname "$(realpath "$0")")"
 
@@ -32,8 +49,11 @@ if [ -z "$OPENAI_API_KEY" ]; then
 fi
 
 # Parse arguments
-while getopts ":t:m:p:s:f:a:" opt; do
+while getopts ":t:m:p:s:f:a:h" opt; do
     case ${opt} in
+    h)
+        usage
+        ;;
     t)
         type=$OPTARG
         ;;
@@ -105,10 +125,18 @@ case $type in
     prompt="$message"
     ;;
 2)
+    if [ -z "$file_upload" ]; then
+        echo "no file uploaded"
+        exit 1
+    fi
     prompt="$message \n$(read_file_content "$file_upload")"
     ;;
 3)
     prompt="$message"
+    if [ -z "$file_upload" ]; then
+        echo "no file uploaded"
+        exit 1
+    fi
     image_data=$(base64 -w 0 "$file_upload")
     ;;
 *)
