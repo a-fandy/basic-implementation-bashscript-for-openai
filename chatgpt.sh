@@ -12,7 +12,7 @@
 # ./chatgpt.sh -p "Your message here" [-t "Type"] [-m "Model"] [-s "User Session"] [-f "file uplaod"] [-a "assistant"] 
 
 function usage() {
-    echo "Usage: $0 -p \"Your message here\" [-t \"Type\"] [-m \"Model\"] [-s \"User Session\"] [-f \"file upload\"] [-a \"assistant\"] [-h]"
+    echo "Usage: $0 -p \"Your message here\" [-t \"Type\"] [-m \"Model\"] [-s \"User Session\"] [-f \"file upload\"] [-a \"assistant\"] [-d] [-h]"
     echo
     echo "Options:"
     echo "  -p \"Your message here\"    Required. The prompt message to send to the API."
@@ -21,6 +21,7 @@ function usage() {
     echo "  -s \"User Session\"         Optional. A session identifier for tracking history."
     echo "  -f \"file upload\"          Optional. A file to upload, used with types 2 and 3."
     echo "  -a \"assistant\"            Optional. Set the assistant's initial message."
+    echo "  -d                        Display the text"
     echo "  -h                        Display this help message."
     echo
     echo "Example:"
@@ -36,12 +37,14 @@ history_filename="$script_dir/history-chat"
 
 # Initialize variables
 type=1                          # Default type
-model="gpt-4o"                  # Default model
+# model="gpt-4o"                # Default model
 # model="gpt-4.1-mini" 
+model="gpt-4o-mini" 
 user_session=""
 message=""
 file_upload=""
 assistant="You are a helpful assistant."
+diplay_text="false"
 
 # Make sure OPENAI_API_KEY is set
 if [ -z "$OPENAI_API_KEY" ]; then
@@ -50,7 +53,7 @@ if [ -z "$OPENAI_API_KEY" ]; then
 fi
 
 # Parse arguments
-while getopts ":t:m:p:s:f:a:h" opt; do
+while getopts ":t:m:p:s:f:a:h :d" opt; do
     case ${opt} in
     h)
         usage
@@ -72,6 +75,9 @@ while getopts ":t:m:p:s:f:a:h" opt; do
         ;;
     a)
         assistant=$OPTARG
+        ;;
+    d)
+        diplay_text="true"
         ;;
     \?)
         echo "Invalid option: -$OPTARG" 1>&2
@@ -104,21 +110,36 @@ if [ ! -f "$HISTORY_FILE" ]; then
     echo "$assis_mode" >"$HISTORY_FILE"
 fi
 
+
+# Get the system message content
+system_assistant=$(jq -r '. | map(select(.role == "system")) // empty' "$HISTORY_FILE")
+assistant=$(jq -r '. | map(select(.role == "system"))[0].content // empty' "$HISTORY_FILE")
+
+# Read the history and determine how many past messages exist
+history_count=$(jq 'length' "$HISTORY_FILE")
+if [ "$history_count" -ge 3 ]; then
+    # Get last assistant message
+    last_message=$(jq -r '. | reverse | map(select(.role == "assistant"))' "$HISTORY_FILE")
+    history_chat=$(echo "$system_assistant" | jq --argjson obj "$last_message" '. += [$obj[0]]')
+else
+    history_chat="$system_assistant"
+fi
+
 # Function to read contents of a file
 read_file_content() {
     cat "$1"
 }
 
 # Display the provided arguments
-echo "Type: $type"
-echo "Model: $model"
-echo "Prompt: $message"
-echo "User Session: $user_session"
-echo "History File: $HISTORY_FILE"
-echo "File upload: $file_upload"
-echo "assistant: $assistant"
-
-# exit 1
+if [ "$diplay_text" == "true" ]; then
+    echo "Type: $type"
+    echo "Model: $model"
+    echo "Prompt: $message"
+    echo "User Session: $user_session"
+    echo "History File: $HISTORY_FILE"
+    echo "File upload: $file_upload"
+    echo "assistant: $assistant"
+fi
 
 # Get content based on user choice
 case $type in
@@ -146,11 +167,16 @@ case $type in
     ;;
 esac
 
+tmp_history=$(jq --arg msg "$message" '. += [{"role":"user", "content":$msg}]' "$HISTORY_FILE")
+
 # Add GPT Query logic here
 if [ "$type" != "3" ]; then
     # Add user's message to history
-    body=$(jq --arg msg "$prompt" '. += [{"role":"user", "content":$msg}]' "$HISTORY_FILE")
+    # body=$(jq --arg msg "$prompt" '. += [{"role":"user", "content":$msg}]' "$HISTORY_FILE")
     # body=$(echo "$tmp_history" | jq --arg msg "$assistant" '. += [{"role":"system", "content":$msg}]')
+    # Add user's message to history
+    # body=$(jq --arg msg "$message" --arg last "$last_assistant_message" '. += [{"role": "user", "content":$msg}, {"role":"assistant","content":$last}]' "$HISTORY_FILE") 
+    body=$(echo "$history_chat" | jq --arg msg "$prompt" '. += [{"role":"user", "content":$msg}]')
     json_payload=$(
     cat <<EOF
         {
@@ -161,7 +187,18 @@ if [ "$type" != "3" ]; then
 EOF
     )
 else
-    body=$(jq \
+    # body=$(jq \
+    # --arg msg "$prompt" \
+    # --arg img "$image_data" \
+    # '. += [{
+    #     "role": "user",
+    #     "content": [
+    #     { "type": "input_text", "text": $msg },
+    #     { "type": "input_image", "image_url": ("data:image/jpeg;base64,"+$img) }
+    #     ]
+    # }]' "$HISTORY_FILE")
+    # body=$(echo "$tmp_history" | jq --arg msg "$assistant" '. += [{"role":"system", "content":$msg}]')
+    body=$(echo "$history_chat" | jq \
     --arg msg "$prompt" \
     --arg img "$image_data" \
     '. += [{
@@ -170,10 +207,7 @@ else
         { "type": "input_text", "text": $msg },
         { "type": "input_image", "image_url": ("data:image/jpeg;base64,"+$img) }
         ]
-    }]' "$HISTORY_FILE")
-    # echo $body
-    # exit 0
-    # body=$(echo "$tmp_history" | jq --arg msg "$assistant" '. += [{"role":"system", "content":$msg}]')
+    }]')
     json_payload=$(
         cat <<EOF
         {
@@ -197,9 +231,8 @@ response_raw=$(curl https://api.openai.com/v1/responses \
 response=$(echo "$response_raw" | jq -r '.output [] | select(.type == "message") | .content[0].text')
 echo -e "\n$response\n"
 
-
 if [ "$response" != "null" ]; then
-    echo "$body" | jq --arg msg "$response" '. += [{"role":"assistant", "content":$msg}]' >"$HISTORY_FILE"
+    echo "$tmp_history" | jq --arg msg "$response" '. += [{"role":"assistant", "content":$msg}]' >"$HISTORY_FILE"
 fi
 
 exit 0
